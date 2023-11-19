@@ -2,3 +2,7 @@
 /speech
 /audio
 __pycache__
+*.txt
+*.json
+*.db
+*.ipynb
