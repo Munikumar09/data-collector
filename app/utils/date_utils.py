@@ -52,3 +52,23 @@ def duration_to_seconds(duration: str):
         return int(duration[0]) * 60 + int(duration[1])
     else:
         return int(duration[0])
+def seconds_to_duration(seconds:float)->str:
+    """
+    Returns the duration in the format HH:MM:SS for the given duration in seconds
+    
+    Parameters
+    ----------
+    seconds: ``float``
+        The duration in seconds
+        
+    Returns
+    -------
+    ``str``
+        The duration in the format HH:MM:SS for the given duration in seconds
+    """
+    seconds = int(seconds)
+    hours = seconds//3600
+    seconds = seconds%3600
+    minutes = seconds//60
+    seconds = seconds%60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"

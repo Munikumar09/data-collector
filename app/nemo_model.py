@@ -18,7 +18,7 @@ class NemoASR:
     ) -> None:
         self.device = device
         self.asr_model = nemo_asr.models.EncDecCTCModelBPE.from_pretrained(
-            model_name=model_name
+            model_name=model_name,
         ).to(device)
 
     def transcribe_audio(self, audio_file: str):
@@ -35,4 +35,4 @@ class NemoASR:
         ``str``
             The transcription of the audio file
         """
-        return self.asr_model.transcribe(paths2audio_files=[audio_file], batch_size=1)
+        return self.asr_model.transcribe(paths2audio_files=[audio_file], batch_size=1,verbose=False)

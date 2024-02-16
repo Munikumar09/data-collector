@@ -2,7 +2,7 @@ from pydub import AudioSegment
 import json
 from pathlib import Path
 import yt_dlp
-from typing import Dict, List, Union
+from typing import Dict, List, Union,Optional
 from app.data_instances.video_meta import VideoMetaData
 from tqdm import tqdm
 from app.utils.transcription_utils import (
@@ -11,6 +11,7 @@ from app.utils.transcription_utils import (
     clean_transcription,
 )
 from app.utils.common_utils import save_json
+from app.utils.file_utils import create_dir
 from app.db.db_functions import insert_video_metadata
 from app.whisper_model import WhisperModel
 from app.nemo_model import NemoASR
@@ -32,7 +33,7 @@ class AudioProcessor:
         self.whisper_model = whisper_model
         self.nemo_asr = nemo_model
 
-    def download_audio(self, url: str, root_path: Union[str, Path]) -> Path:
+    def download_audio(self, url: str, root_path: Union[str, Path],format:str) -> Optional[Path]:
         """
         Download audio from youtube url and save it to root_path
 
@@ -52,7 +53,7 @@ class AudioProcessor:
             root_path = Path(root_path)
 
         download_path = root_path / url.split("=")[1]
-        audio_file_path = download_path.with_suffix(".mp3")
+        audio_file_path = download_path.with_suffix(f".{format}")
 
         if audio_file_path.exists():
             return audio_file_path
@@ -67,14 +68,17 @@ class AudioProcessor:
             ],
             "outtmpl": str(download_path),
         }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download(url)
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download(url)
+        except Exception as e:
+            print(f"Exception occurred while downloading audio: {e}")
+            return None
 
         return audio_file_path
 
     def split_audio_and_save_transcription(
-        self, audio_path: Path, transcription_data: List[Dict[str, str]]
+        self, audio_path: Path,audio_chunk_save_folder:str, transcription_data: List[Dict[str, str]]
     ):
         """
         Split the audio into chunks and save the transcription of each chunk in a json file
@@ -90,25 +94,25 @@ class AudioProcessor:
         audio = AudioSegment.from_mp3(audio_path)
         audio = audio.set_channels(1)
         audio_path = Path(audio_path)
-        audio_folder = audio_path.parent / audio_path.stem
-        audio_folder.mkdir(parents=True, exist_ok=True)
-
+        create_dir(audio_chunk_save_folder)
+        # print(transcription_data)
         for data in transcription_data:
             start_time = data["start"]
             end_time = data["start"] + data["duration"]
             audio_chunk = audio[start_time * 1000 : end_time * 1000]
             file_name = f"{start_time}_{end_time}.mp3"
-            audio_chunk.export(f"{str(audio_folder)}/{file_name}", format="mp3")
+            audio_chunk.export(f"{audio_chunk_save_folder}/{file_name}", format="mp3")
             transcript[file_name] = data["text"]
 
-        with open(f"{str(audio_folder)}/transcript.json", "w") as f:
+        with open(f"{audio_chunk_save_folder}/transcript.json", "w") as f:
             json.dump(transcript, f, ensure_ascii=False)
 
     def validate_transcriptions(
         self,
         transcription_data: Dict[str, List[Dict[str, str]]],
         audio_folder: Path,
-        video_metadata: VideoMetaData,
+        video_metadata: Optional[VideoMetaData],
+        threshold: int = 20,
     ):
         """
         Validate the transcriptions of the audios whether they are in Hindi or not.
@@ -121,8 +125,10 @@ class AudioProcessor:
             A dictionary of audio name and its transcription
         audio_folder: ``Path``
             Path to the folder containing the audio files
-        video_metadata: ``VideoMetaData``
+        video_metadata: ``Optional[VideoMetaData]``
             VideoMetaData object of the video
+        threshold: ``int``, ( default = 20 )
+            Threshold to consider the similarity between the transcriptions
         """
 
         similarity = {}
@@ -142,7 +148,7 @@ class AudioProcessor:
                     sub_string = find_longest_common_substring(yt_text, nemo_text)
                     percent_match = calculate_similarity(yt_text, nemo_text, sub_string)
 
-                    if percent_match > 20:
+                    if percent_match > threshold:
                         similarity[audio_name] = {
                             "normal": yt_text,
                             "nemo": nemo_text,
@@ -163,7 +169,10 @@ class AudioProcessor:
         self,
         root_audio_dir: Union[str, Path],
         valid_transcription_data: Dict[str, List[Dict[str, str]]],
-        videos_metadata: List[VideoMetaData],
+        videos_metadata: Optional[List[VideoMetaData]],
+        format:str,
+        threshold: int = 20,
+        
     ):
         """
         Download the audio and split it into chunks and save the transcription of each chunk in a json file and validate the transcriptions.
@@ -174,8 +183,12 @@ class AudioProcessor:
             Path to save the downloaded audio
         valid_transcription_data: ``Dict[str, List[Dict[str, str]]]``
             A dictionary of video URL and its valid transcription
-        videos_metadata: ``List[VideoMetaData]``
+        videos_metadata: ``Optional[List[VideoMetaData]]``
             A list of VideoMetaData objects for each video
+        format: ``str``
+            Format to download the audio
+        threshold: ``int``, ( default = 20 )
+            Threshold to consider the similarity between the transcriptions
         """
         if isinstance(root_audio_dir, str):
             root_audio_dir = Path(root_audio_dir)
@@ -186,15 +199,21 @@ class AudioProcessor:
             if (root_audio_dir / video_id).exists():
                 continue
 
-            audio_path = self.download_audio(video_url, root_audio_dir)
-            self.split_audio_and_save_transcription(audio_path, transcription_data)
-            audio_folder = audio_path.parent / audio_path.stem
+            audio_path = self.download_audio(video_url, root_audio_dir,format)
+            if audio_path:
+                for transcription_type, transcriptions in transcription_data.items():
+                    if transcriptions:
+                        audio_folder=audio_path.parent / audio_path.stem/ transcription_type
+                        self.split_audio_and_save_transcription(audio_path,audio_folder, transcriptions)
 
-            with open(audio_folder / "transcript.json", "r") as f:
-                transcriptions = json.load(f)
+                        with open(audio_folder / f"transcript.json", "r") as f:
+                            transcriptions = json.load(f)
+                            
+                        video_metadata = None
+                        
+                        if videos_metadata:
+                            for video_metadata in videos_metadata:
+                                if video_metadata.video_id == video_id:
+                                    break
 
-            for video_metadata in videos_metadata:
-                if video_metadata.video_id == video_id:
-                    break
-
-            self.validate_transcriptions(transcriptions, audio_folder, video_metadata)
+                        self.validate_transcriptions(transcriptions, audio_folder, video_metadata,threshold)
