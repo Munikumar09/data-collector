@@ -1,0 +1,16 @@
+defaults:
+  - _self_
+  - asr_provider: nemo
+  - speech_language_detection: whisper
+
+search_queries: education in hindi
+is_file: false
+is_channel_ids: false
+percent_match: 40
+device: cuda
+max_pages: 1
+language: hindi
+dst_folder_name: /data1/muni/datasets/hindi/yt_data/temp
+download_audio_format: mp3
+asr_provider: ${asr_provider}
+speech_language_detection: ${speech_language_detection_model}

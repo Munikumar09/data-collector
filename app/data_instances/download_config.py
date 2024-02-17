@@ -11,5 +11,4 @@ class DownloadConfig:
     language: str
     dst_folder_name: str
     download_audio_format: str
-    whisper_model_or_path: str
-    nemo_model_or_path: str
+    

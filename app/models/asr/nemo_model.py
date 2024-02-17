@@ -1,7 +1,12 @@
 import nemo.collections.asr as nemo_asr
+from .asr import ASR
+from typing import Union
+import numpy as np
+import torch
 
 
-class NemoASR:
+@ASR.register("nemo")
+class NemoASR(ASR):
     """
     Transcribe audio using NeMo ASR model
 
@@ -21,7 +26,10 @@ class NemoASR:
             model_name=model_name,
         ).to(device)
 
-    def transcribe_audio(self, audio_file: str):
+    def transcribe_audio(self, audio: Union[torch.Tensor, np.ndarray]):
+        pass
+
+    def transcribe_audio_file(self, audio_file: str):
         """
         Transcribe the audio file at the given path using the NeMo ASR model
 
@@ -35,4 +43,6 @@ class NemoASR:
         ``str``
             The transcription of the audio file
         """
-        return self.asr_model.transcribe(paths2audio_files=[audio_file], batch_size=1,verbose=False)
+        return self.asr_model.transcribe(
+            paths2audio_files=[audio_file], batch_size=1, verbose=False
+        )

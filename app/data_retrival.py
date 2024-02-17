@@ -210,11 +210,11 @@ class DataRetrieval:
                 )
                 manual_transcript = self.get_manually_created_transcription(transcript_list)
                 auto_transcript = self.get_auto_generated_transcription(transcript_list)
-
-                video_transcription_data[video_url] = {
-                    "manual": manual_transcript,
-                    "auto": auto_transcript,
-                }
+                if manual_transcript or auto_transcript:
+                    video_transcription_data[video_url] = {
+                        "manual": manual_transcript,
+                        "auto": auto_transcript,
+                    }
             except Exception as e:
                 continue
 

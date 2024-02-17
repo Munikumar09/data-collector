@@ -2,7 +2,7 @@ from pydub import AudioSegment
 import json
 from pathlib import Path
 import yt_dlp
-from typing import Dict, List, Union,Optional
+from typing import Dict, List, Union, Optional
 from app.data_instances.video_meta import VideoMetaData
 from tqdm import tqdm
 from app.utils.transcription_utils import (
@@ -13,8 +13,10 @@ from app.utils.transcription_utils import (
 from app.utils.common_utils import save_json
 from app.utils.file_utils import create_dir
 from app.db.db_functions import insert_video_metadata
-from app.whisper_model import WhisperModel
-from app.nemo_model import NemoASR
+from app.models.speech_language_detection.speech_language_detection import (
+    SpeechLanguageDetection,
+)
+from app.models.asr.asr import ASR
 
 
 class AudioProcessor:
@@ -23,17 +25,21 @@ class AudioProcessor:
 
     Attributes
     ----------
-    whisper_model: ``WhisperModel``
-        Instance of WhisperModel class
-    nemo_model: ``NemoASR``
-        Instance of NemoASR class
+    speech_language_detector: ``SpeechLanguageDetection``
+        SpeechLanguageDetection object to detect the language of the audio
+    asr: ``ASR``
+        ASR object to transcribe the audio
     """
 
-    def __init__(self, whisper_model: WhisperModel, nemo_model: NemoASR) -> None:
-        self.whisper_model = whisper_model
-        self.nemo_asr = nemo_model
+    def __init__(
+        self, speech_language_detector: SpeechLanguageDetection, asr: ASR
+    ) -> None:
+        self.speech_language_detector = speech_language_detector
+        self.asr = asr
 
-    def download_audio(self, url: str, root_path: Union[str, Path],format:str) -> Optional[Path]:
+    def download_audio(
+        self, url: str, root_path: Union[str, Path], format: str
+    ) -> Optional[Path]:
         """
         Download audio from youtube url and save it to root_path
 
@@ -49,6 +55,7 @@ class AudioProcessor:
         ``Path``
             Path to the downloaded audio
         """
+        print(f"Downloading audio from {url}")
         if isinstance(root_path, str):
             root_path = Path(root_path)
 
@@ -67,6 +74,7 @@ class AudioProcessor:
                 }
             ],
             "outtmpl": str(download_path),
+            "quiet": True
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -78,7 +86,10 @@ class AudioProcessor:
         return audio_file_path
 
     def split_audio_and_save_transcription(
-        self, audio_path: Path,audio_chunk_save_folder:str, transcription_data: List[Dict[str, str]]
+        self,
+        audio_path: Path,
+        audio_chunk_save_folder: str,
+        transcription_data: List[Dict[str, str]],
     ):
         """
         Split the audio into chunks and save the transcription of each chunk in a json file
@@ -95,7 +106,7 @@ class AudioProcessor:
         audio = audio.set_channels(1)
         audio_path = Path(audio_path)
         create_dir(audio_chunk_save_folder)
-        # print(transcription_data)
+
         for data in transcription_data:
             start_time = data["start"]
             end_time = data["start"] + data["duration"]
@@ -139,10 +150,10 @@ class AudioProcessor:
                     continue
 
                 audio_file_path = audio_folder / audio_name
-                language = self.whisper_model.detect_language(str(audio_file_path))
+                language = self.speech_language_detector.detect_language_from_file(str(audio_file_path))
 
                 if language == "hi":
-                    nemo_text = self.nemo_asr.transcribe_audio(str(audio_file_path))[0]
+                    nemo_text = self.asr.transcribe_audio_file(str(audio_file_path))[0]
                     yt_text = clean_transcription(yt_text)
                     nemo_text = clean_transcription(nemo_text)
                     sub_string = find_longest_common_substring(yt_text, nemo_text)
@@ -170,9 +181,8 @@ class AudioProcessor:
         root_audio_dir: Union[str, Path],
         valid_transcription_data: Dict[str, List[Dict[str, str]]],
         videos_metadata: Optional[List[VideoMetaData]],
-        format:str,
+        format: str,
         threshold: int = 20,
-        
     ):
         """
         Download the audio and split it into chunks and save the transcription of each chunk in a json file and validate the transcriptions.
@@ -199,21 +209,28 @@ class AudioProcessor:
             if (root_audio_dir / video_id).exists():
                 continue
 
-            audio_path = self.download_audio(video_url, root_audio_dir,format)
+            audio_path = self.download_audio(video_url, root_audio_dir, format)
+
             if audio_path:
                 for transcription_type, transcriptions in transcription_data.items():
                     if transcriptions:
-                        audio_folder=audio_path.parent / audio_path.stem/ transcription_type
-                        self.split_audio_and_save_transcription(audio_path,audio_folder, transcriptions)
+                        audio_folder = (
+                            audio_path.parent / audio_path.stem / transcription_type
+                        )
+                        self.split_audio_and_save_transcription(
+                            audio_path, audio_folder, transcriptions
+                        )
 
                         with open(audio_folder / f"transcript.json", "r") as f:
                             transcriptions = json.load(f)
-                            
+
                         video_metadata = None
-                        
+
                         if videos_metadata:
                             for video_metadata in videos_metadata:
                                 if video_metadata.video_id == video_id:
                                     break
 
-                        self.validate_transcriptions(transcriptions, audio_folder, video_metadata,threshold)
+                        self.validate_transcriptions(
+                            transcriptions, audio_folder, video_metadata, threshold
+                        )

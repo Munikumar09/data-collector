@@ -1,12 +1,14 @@
 from app.audio_processor import AudioProcessor
 from app.data_retrival import DataRetrieval
-from app.whisper_model import WhisperModel
+from app.models.speech_language_detection.speech_language_detection import (
+    SpeechLanguageDetection,
+)
 from app.data_validator import DataValidator
-from app.nemo_model import NemoASR
+from app.models.asr.asr import ASR
 from app.data_instances.download_config import DownloadConfig
 from app.db.db_functions import filter_and_insert_videos
 from app.db.connection import create_db_and_tables
-from app.utils.file_utils import create_dir,remove_files_with_pattern
+from app.utils.file_utils import create_dir, remove_files_with_pattern
 import hydra
 from omegaconf import DictConfig, OmegaConf
 
@@ -23,37 +25,43 @@ logging.basicConfig(
 )
 
 
-@hydra.main(config_path="./", config_name="download_config",version_base=None)
+@hydra.main(config_path="./app/configs", config_name="download", version_base=None)
 def main(cfg: DictConfig):
-    download_config = DownloadConfig(**OmegaConf.to_container(cfg))
+    config = OmegaConf.to_container(cfg, resolve=True)
+    speech_language_detection_config =config.pop("speech_language_detection")
+
+    asr_config = config.pop("asr_provider")
+    download_config = DownloadConfig(**config)
+    
     logger.info(
         f"device: {download_config.device}\nmax_pages: {download_config.max_pages}\nlanguage: {download_config.language}"
     )
     search_queries = download_config.search_queries
+
     # Prepare the queries to search for videos
     if download_config.is_file:
         with open(search_queries, "r") as f:
             search_queries = f.read().splitlines()
-    file_path=Path(__file__).parent
+    file_path = Path(__file__).parent
 
     audio_download_folder = Path(download_config.dst_folder_name)
-    
+
     # Initialize the data retrieval, whisper model, nemo model, audio processor and data validator
     data_retrieval = DataRetrieval()
-    whisper_asr = WhisperModel(
-        model=download_config.whisper_model_or_path, device=download_config.device
-    )
-    nemo_asr = NemoASR(
-        model_name=download_config.nemo_model_or_path, device=download_config.device
-    )
-    audio_processor = AudioProcessor(whisper_asr, nemo_asr)
+
+    speech_language_detector = SpeechLanguageDetection.by_name(
+        speech_language_detection_config.pop("provider")
+    )(**speech_language_detection_config)
+    asr = ASR.by_name(asr_config.pop("provider"))(**asr_config)
+
+    audio_processor = AudioProcessor(speech_language_detector, asr)
     data_validator = DataValidator()
 
     if isinstance(search_queries, str):
         search_queries = [download_config.search_queries]
-    processed_queries_path=file_path/"processed_queries.txt"
+    processed_queries_path = file_path / "processed_queries.txt"
     if processed_queries_path.exists():
-        with open(file_path/"processed_queries.txt", "r") as f:
+        with open(file_path / "processed_queries.txt", "r") as f:
             processed_queries = f.read().splitlines()
         for query in processed_queries:
             if query in search_queries:
@@ -69,7 +77,7 @@ def main(cfg: DictConfig):
                 search_query
             )
         else:
-            original_query=search_query
+            original_query = search_query
             search_query = search_query.lower().strip()
             search_query = search_query.replace(" ", "+").strip()
             audio_query_folder = audio_download_folder / search_query.replace(
@@ -79,7 +87,7 @@ def main(cfg: DictConfig):
             videos_metadata = data_retrieval.get_video_metadata_with_query(
                 search_query, max_pages=download_config.max_pages
             )
-            
+
         create_dir(audio_query_folder)
 
         with open(audio_query_folder / "urls_list.txt", "w") as f:
@@ -106,12 +114,14 @@ def main(cfg: DictConfig):
             download_config.download_audio_format,
             download_config.percent_match,
         )
-        
-        with open(file_path/"processed_queries.txt", "a+") as f:
-            f.write(original_query+"\n")
-        remove_files_with_pattern(audio_query_folder,download_config.download_audio_format)
-        remove_files_with_pattern(audio_query_folder,".part")
-        
+
+        with open(file_path / "processed_queries.txt", "a+") as f:
+            f.write(original_query + "\n")
+        remove_files_with_pattern(
+            audio_query_folder, download_config.download_audio_format
+        )
+        remove_files_with_pattern(audio_query_folder, ".part")
+
 
 if __name__ == "__main__":
     create_db_and_tables()
