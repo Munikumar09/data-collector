@@ -143,7 +143,7 @@ class AudioProcessor:
         """
 
         similarity = {}
-
+        req_langugage_file_count = 0
         for audio_name, yt_text in tqdm(transcription_data.items()):
             try:
                 if yt_text.strip() == "":
@@ -152,7 +152,8 @@ class AudioProcessor:
                 audio_file_path = audio_folder / audio_name
                 language = self.speech_language_detector.detect_language_from_file(str(audio_file_path))
 
-                if language == "hi":
+                if language.lower() == "hi":
+                    req_langugage_file_count += 1
                     nemo_text = self.asr.transcribe_audio_file(str(audio_file_path))[0]
                     yt_text = clean_transcription(yt_text)
                     nemo_text = clean_transcription(nemo_text)
@@ -167,7 +168,7 @@ class AudioProcessor:
                             "percent_match": percent_match,
                         }
             except Exception:
-                ...
+                print(f"Exception occurred while processing audio: {audio_name}")
 
         if similarity:
             save_json(
@@ -175,6 +176,8 @@ class AudioProcessor:
             )
             if video_metadata:
                 insert_video_metadata(video_metadata)
+        else:
+            print(f"files with hindi language are : {req_langugage_file_count} in {audio_folder}")
 
     def download_and_split_audio(
         self,

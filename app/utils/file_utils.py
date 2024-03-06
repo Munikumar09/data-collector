@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Union,List
+from typing import Union, List
 import shutil
 import json
 
@@ -26,6 +26,7 @@ def resolve_path(path: Union[str, Path]):
 
     return path
 
+
 def remove_files_with_pattern(base_path: Union[str, Path], pattern: str):
     """
     Remove files with the given pattern from the base path
@@ -40,9 +41,15 @@ def remove_files_with_pattern(base_path: Union[str, Path], pattern: str):
     if isinstance(base_path, str):
         base_path = Path(base_path)
 
+    if not pattern.startswith("."):
+        pattern = f".{pattern}"
+    pattern = f"*{pattern}"
+
     for file in base_path.glob(pattern):
         if file.is_file():
             file.unlink()
+
+
 def create_dir(dir_path: Union[str, Path], parents: bool = True):
     """
     Create a directory if it does not exist
@@ -78,7 +85,7 @@ def remove_dir(dir_name: Union[str, Path]):
 
 
 def get_total_duration_from_transcription_file(
-    transcription_file, audio_file_format="mp3"
+    transcription_file, audio_file_format="mp3", percent_based=False, low=30, high=100
 ) -> float:
     """
     Get the total duration of the audio from the transcription file
@@ -96,24 +103,30 @@ def get_total_duration_from_transcription_file(
     total_duration = 0
     with open(transcription_file, "r") as f:
         transcript = json.load(f)
-    for audio_file_name in transcript.keys():
+    for audio_file_name, transcriptions in transcript.items():
         audio_file_name = audio_file_name.replace(f".{audio_file_format}", "")
         start_time = float(audio_file_name.split("_")[0])
         end_time = float(audio_file_name.split("_")[1])
         duration = end_time - start_time
-        total_duration += duration
+        if percent_based and "percent_match" in transcriptions:
+            if (
+                transcriptions["percent_match"] >= low
+                and transcriptions["percent_match"] <= high
+            ):
+                total_duration += duration
+        else:
+            total_duration += duration
     return total_duration
 
-def filter_unqiue_files(
-    transcription_files: List[str]
-) -> dict:
-    unique_files=set()
+
+def filter_unqiue_files(transcription_files: List[str]) -> list:
+    unique_files = set()
     for transcript_file in transcription_files:
         if "manual" in str(transcript_file):
             unique_files.add(str(transcript_file))
         else:
-            auto_trans=str(transcript_file).replace("auto","manual")
+            auto_trans = str(transcript_file).replace("auto", "manual")
             if auto_trans not in unique_files:
                 unique_files.add(str(transcript_file))
-                
+
     return list(unique_files)

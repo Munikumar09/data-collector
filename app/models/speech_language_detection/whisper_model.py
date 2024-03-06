@@ -3,6 +3,7 @@ from .speech_language_detection import SpeechLanguageDetection
 import torch
 import numpy as np
 from typing import Union
+from pathlib import Path
 
 
 @SpeechLanguageDetection.register("whisper")
@@ -20,7 +21,7 @@ class WhisperModel(SpeechLanguageDetection):
 
     def __init__(self, model_name: str = "small", device: str = "cpu") -> None:
         self.device = device
-        self.model = whisper.load_model(model_name).to(device)
+        self.model = whisper.load_model(model_name,download_root="/data1/muni/models/whisper")
 
     def detect_language_from_signal(
         self, audio: Union[torch.Tensor, np.ndarray]
@@ -58,5 +59,7 @@ class WhisperModel(SpeechLanguageDetection):
         ``str``
             The detected language of the audio file
         """
-        audio, _ = whisper.load_audio(audio_path)
+        if isinstance(audio_path, Path):
+            audio_path = str(audio_path)
+        audio= whisper.load_audio(audio_path)
         return self.detect_language_from_signal(audio)

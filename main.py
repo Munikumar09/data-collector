@@ -117,6 +117,8 @@ def main(cfg: DictConfig):
 
         with open(file_path / "processed_queries.txt", "a+") as f:
             f.write(original_query + "\n")
+        
+        logger.info(f"Deleting longer audio files for prompt: {audio_query_folder} and pattern: {download_config.download_audio_format}")
         remove_files_with_pattern(
             audio_query_folder, download_config.download_audio_format
         )

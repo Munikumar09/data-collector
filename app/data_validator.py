@@ -80,7 +80,6 @@ class DataValidator:
                 auto_generated_transcription = self.validate_transcription(
                     auto_generated_transcription
                 )
-
             valid_transcriptions[video_url] = {
                 "manual": manual_transcription if manual_transcription else None,
                 "auto": (
@@ -89,7 +88,6 @@ class DataValidator:
                     else None
                 ),
             }
-
         return valid_transcriptions
 
     def get_non_hindi_tokens(self, text: str) -> List[str]:

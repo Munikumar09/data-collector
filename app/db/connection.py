@@ -1,6 +1,6 @@
 from sqlmodel import create_engine, SQLModel
 
-sqlite_db="youtube_t.db"
+sqlite_db="youtube.db"
 
 sqlite_url = f"sqlite:///{sqlite_db}"
 
